@@ -36,6 +36,7 @@
 #include "options.h"
 #include "perf.h"
 #include "saves.h"
+#include "linkcable.h"
 
 #define WATCHDOG_S 15
 #define BATTERY_CHECK_MS 10000
@@ -2537,10 +2538,21 @@ int host_run(const struct host_config *cfg)
 	{
 		int64_t t0 = hnow_ms();
 
+		/* link-cable network variables (gambatte): inject before load */
+		if (linkcable_available()) {
+			hlog(HLOG_INFO, "linkcable: connecting to %s (%s)", peer, ip_cmp(self, peer) < 0 ? "server" : "client");
+		}
+
 		if (!H.core.load_game(H.content_path[0] ? &gi : NULL)) {
 			ret = fail(HOST_EXIT_ERROR, N_("The emulator could not load this game"));
 			goto out_deinit;
 		}
+		/* After core init: set variables (linkcable runs via SET_VARIABLE). */
+		if (linkcable_available()) {
+			linkcable_set_variables(env_cb);
+			hlog(HLOG_INFO, "linkcable: netplay enabled");
+		}
+
 		hlog(HLOG_INFO, "retro_load_game: %lld ms", (long long)(hnow_ms() - t0));
 	}
 	H.game_loaded = true;

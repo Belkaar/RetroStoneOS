@@ -21,6 +21,7 @@
 #include "../i18n/i18n.h"
 #include "hwrender.h"
 #include "options.h"
+#include "linkcable.h"
 
 /* ------------------------------------------------------------- dlopen */
 

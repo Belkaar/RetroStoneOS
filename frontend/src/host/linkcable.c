@@ -86,55 +86,39 @@ bool linkcable_available(void)
 
 /* ------------------------------------------------ linkcable_set_variables */
 
-bool linkcable_set_variables(retro_environment_t env_cb)
+bool linkcable_set_variables(void *env_cb)
 {
+	struct retro_variable v;
+	bool is_server = ip_compare(self, peer) < 0;
+	char tmp[4];
+	int (*set_var)(const struct retro_variable *) = env_cb;
+
 	if (!linkcable_available()) return false;
 
-	/* Determine server/client role: lower IP = server */
-	int cmp = ip_compare(self, peer);
-	bool is_server = (cmp < 0);
+	/* gambatte_gb_link_mode */
+	v.key = "gambatte_gb_link_mode";
+	v.value = is_server ? "Network Server" : "Network Client";
+	set_var(&v);
 
-	/* Set gambatte_gb_link_mode */
-	struct retro_variable var_mode;
-
-	if (is_server) {
-		var_mode.key = "gambatte_gb_link_mode";
-		var_mode.value = "Network Server";
-	} else {
-		var_mode.key = "gambatte_gb_link_mode";
-		var_mode.value = "Network Client";
-	}
-	env_cb(RETRO_ENVIRONMENT_SET_VARIABLE, &var_mode);
-
-	/* Set gambatte_gb_link_network_port */
-	struct retro_variable var_port;
-	var_port.key = "gambatte_gb_link_network_port";
-	var_port.value = "12345";
-	env_cb(RETRO_ENVIRONMENT_SET_VARIABLE, &var_port);
+	/* gambatte_gb_link_network_port */
+	v.key = "gambatte_gb_link_network_port";
+	v.value = "12345";
+	set_var(&v);
 
 	if (!is_server) {
 		/* Set server IP for client: split into 3 variables */
 		unsigned oct[4];
 		sscanf(peer, "%u.%u.%u.%u", &oct[0], &oct[1], &oct[2], &oct[3]);
 
-		char buf[8];
-		snprintf(buf, sizeof(buf), "%u", oct[0]);
-		struct retro_variable var_ip1;
-		var_ip1.key = "gambatte_gb_link_network_server_ip_1";
-		var_ip1.value = buf;
-		env_cb(RETRO_ENVIRONMENT_SET_VARIABLE, &var_ip1);
-
-		snprintf(buf, sizeof(buf), "%u", oct[1]);
-		struct retro_variable var_ip2;
-		var_ip2.key = "gambatte_gb_link_network_server_ip_2";
-		var_ip2.value = buf;
-		env_cb(RETRO_ENVIRONMENT_SET_VARIABLE, &var_ip2);
-
-		snprintf(buf, sizeof(buf), "%u", oct[2]);
-		struct retro_variable var_ip3;
-		var_ip3.key = "gambatte_gb_link_network_server_ip_3";
-		var_ip3.value = buf;
-		env_cb(RETRO_ENVIRONMENT_SET_VARIABLE, &var_ip3);
+		snprintf(tmp, sizeof(tmp), "%u", oct[0]);
+		v.key = "gambatte_gb_link_network_server_ip_1"; v.value = tmp;
+		set_var(&v);
+		snprintf(tmp, sizeof(tmp), "%u", oct[1]);
+		v.key = "gambatte_gb_link_network_server_ip_2"; v.value = tmp;
+		set_var(&v);
+		snprintf(tmp, sizeof(tmp), "%u", oct[2]);
+		v.key = "gambatte_gb_link_network_server_ip_3"; v.value = tmp;
+		set_var(&v);
 	}
 
 	return true;
