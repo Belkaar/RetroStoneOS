@@ -643,6 +643,11 @@ static bool env_cb(unsigned cmd, void *data)
 	return core_environment(cmd, data);
 }
 
+retro_environment_t core_get_env_cb(void)
+{
+	return env_cb;
+}
+
 /* ------------------------------------------------------ AV callbacks */
 
 static void video_cb(const void *data, unsigned w, unsigned h, size_t pitch)

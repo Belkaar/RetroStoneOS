@@ -220,6 +220,7 @@ static inline bool host_busy_get(void)
 int core_open(const char *path);
 void core_close(void);
 bool core_environment(unsigned cmd, void *data);
+retro_environment_t core_get_env_cb(void);
 void core_set_callbacks(void);
 void host_video_setup(void);
 void host_audio_setup(void);

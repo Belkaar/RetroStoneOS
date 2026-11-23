@@ -13,7 +13,11 @@
 #pragma once
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
+
+/* libretro types */
+#include "../../third_party/libretro/libretro.h"
 
 /* Initialise linkcable support. Called once at host startup. Returns 0. */
 int linkcable_init(void);
@@ -33,3 +37,11 @@ bool linkcable_set_variables(retro_environment_t env_cb);
 /* Return the current link status string for UI display.
  * Values: "connected", "waiting", "disconnected", or NULL. */
 const char *linkcable_status(void);
+
+/* Return the peer IP address, or NULL if unknown.
+ * May be called only after linkcable_available() returns true. */
+const char *linkcable_peer_ip(void);
+
+/* Return whether this device is the server (lower IP).
+ * Returns true for server, false for client. Only valid when available(). */
+bool linkcable_is_server(void);

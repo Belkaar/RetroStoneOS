@@ -2540,7 +2540,9 @@ int host_run(const struct host_config *cfg)
 
 		/* link-cable network variables (gambatte): inject before load */
 		if (linkcable_available()) {
-			hlog(HLOG_INFO, "linkcable: connecting to %s (%s)", peer, ip_cmp(self, peer) < 0 ? "server" : "client");
+			const char *pip = linkcable_peer_ip();
+			hlog(HLOG_INFO, "linkcable: connecting to %s (%s)", pip ? pip : "unknown",
+			     linkcable_is_server() ? "server" : "client");
 		}
 
 		if (!H.core.load_game(H.content_path[0] ? &gi : NULL)) {
@@ -2549,7 +2551,7 @@ int host_run(const struct host_config *cfg)
 		}
 		/* After core init: set variables (linkcable runs via SET_VARIABLE). */
 		if (linkcable_available()) {
-			linkcable_set_variables(env_cb);
+			linkcable_set_variables(core_get_env_cb());
 			hlog(HLOG_INFO, "linkcable: netplay enabled");
 		}
 

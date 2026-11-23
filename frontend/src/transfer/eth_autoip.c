@@ -1,23 +1,11 @@
 /*
  * eth_autoip.c - Link-local (APIPA) IPv4 address assignment and peer discovery
- *
- * RFC 3927 / IEEE 802.0: devices in the 169.254.0.0/16 range assign
- * themselves a link-local address via ARP probes (Duplicate Address Detection)
- * and gratuitous ARPs on binding. The Linux kernel handles all of that
- * transparently when you call `ip addr add` — no avahi, no autoipd daemon
- * needed.
- *
- * This module:
- *   1. Derives a stable second octet from the interface MAC (even → .0,
- *      odd → .1) so two directly-linked devices pick different IPs.
- *   2. Calls `ip addr add` to claim the address.
- *   3. Reads /run/rsos/eth_ip and writes peer info to
- *      /run/rsos/eth_peer_ip via ARP table scanning (ip neigh).
  */
 #include "eth_autoip.h"
 
 #include <arpa/inet.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <net/if.h>
 #include <netinet/in.h>
 #include <stdarg.h>
@@ -35,17 +23,15 @@
 #define PEER_IP  RUNDIR "/eth_peer_ip"
 #define STATUS   RUNDIR "/eth_status"
 
-static char self_ip[16];  /* null-terminated, last seen */
+static char self_ip[16];
 
 /* --------------------------------------------------------------- helpers */
 
-/* Write a string to a file, atomically via tmp+rename. Returns 0 on success. */
 static int write_file_atomic(const char *path, const char *content)
 {
 	char tmp[1024];
 	size_t clen = strlen(content);
 
-	(void)clen;  /* used below */
 	snprintf(tmp, sizeof(tmp), "%s.tmp", path);
 
 	int fd = open(tmp, O_WRONLY | O_CREAT | O_TRUNC, 0644);
@@ -60,21 +46,18 @@ static int write_file_atomic(const char *path, const char *content)
 	return 0;
 }
 
-/* Read a single line from /run/rsos/eth_ip into `buf`. Returns 0 on success. */
 static int read_eth_ip(char *buf, size_t bufsz)
 {
 	FILE *f = fopen(ETH_IP, "r");
 	if (!f) return -ENOENT;
 	size_t n = fread(buf, 1, bufsz - 1, f);
 	buf[n >= bufsz ? bufsz - 1 : n] = '\0';
-	/* Trim trailing whitespace */
 	while (n > 0 && (buf[n-1] == '\n' || buf[n-1] == '\r' || buf[n-1] == ' '))
 		buf[--n] = '\0';
 	fclose(f);
 	return n > 0 ? 0 : -EIO;
 }
 
-/* Execute a command via system(3). Returns the shell exit status. */
 static int run_cmd(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 
 static int run_cmd(const char *fmt, ...)
@@ -93,25 +76,21 @@ int eth_autoip_assign(const char *iface)
 {
 	if (!iface || !*iface) return -EINVAL;
 
-	/* Check if interface exists */
 	char path[256];
 	snprintf(path, sizeof(path), "/sys/class/net/%s", iface);
 	if (access(path, F_OK) != 0) {
 		return -ENODEV;
 	}
 
-	/* Already have an IP from a prior assignment this session? */
 	if (self_ip[0]) return 0;
 
 	char ip_buf[16];
 	if (read_eth_ip(ip_buf, sizeof(ip_buf)) == 0 && ip_buf[0]) {
-		/* Already assigned by this process earlier in the session. */
 		strncpy(self_ip, ip_buf, sizeof(self_ip) - 1);
 		self_ip[sizeof(self_ip) - 1] = '\0';
 		return 0;
 	}
 
-	/* Derive second octet from MAC: even → .0, odd → .1 */
 	int mac_last = -1;
 	int fd = socket(AF_INET, SOCK_DGRAM, 0);
 	if (fd >= 0) {
@@ -125,23 +104,18 @@ int eth_autoip_assign(const char *iface)
 		close(fd);
 	}
 
-	uint8_t second_octet;
-	if (mac_last >= 0 && mac_last % 2 != 0) {
-		second_octet = 1;
-	} else {
-		second_octet = 0;
-	}
+	uint8_t second_octet = (mac_last >= 0 && mac_last % 2 != 0) ? 1 : 0;
 
 	char ip_str[32];
 	snprintf(ip_str, sizeof(ip_str), "169.254.%u.0/16", second_octet);
 
-	/* Try to add the address (idempotent: succeeds if already present). */
 	int rc = run_cmd("ip addr add %s dev %s 2>/dev/null; exit 0", ip_str, iface);
 	(void)rc;
 
-	/* Read it back from `ip addr show` so we know what the kernel actually assigned. */
 	char tmp[128];
-	int fd2 = popen("sh -c 'ip addr show $1 | grep \"inet 169\\.254\" | head -1 | awk \'{print $2}\' | cut -d/ -f1' _ " iface, "r");
+	char cmd[512];
+	snprintf(cmd, sizeof(cmd), "sh -c 'ip addr show $1 | grep \"inet 169\\.254\" | head -1 | awk \'{print $2}\' | cut -d/ -f1' _ %s", iface);
+	FILE *fd2 = popen(cmd, "r");
 	if (fd2) {
 		if (fgets(tmp, sizeof(tmp), fd2)) {
 			size_t len = strlen(tmp);
@@ -156,11 +130,9 @@ int eth_autoip_assign(const char *iface)
 	}
 
 	if (!self_ip[0]) {
-		/* Fallback to our guessed address. */
 		snprintf(self_ip, sizeof(self_ip), "169.254.%u.0", second_octet);
 	}
 
-	/* Persist it. */
 	write_file_atomic(ETH_IP, self_ip);
 	write_file_atomic(STATUS, "waiting");
 
@@ -173,25 +145,20 @@ int eth_autoip_discover_peer(const char *iface, char *out_peer_ip, size_t out_le
 {
 	if (!iface || !out_peer_ip || !out_len) return -EINVAL;
 
-	/* Scan the ARP cache for peers in the 169.254.x.x range.
-	 * Output of `ip neigh show dev eth0`:
-	 *   <IP> dev eth0 lladdr <MAC> REACHABLE|STALE|DELAY|PROBE|FAILED */
 	char tmp[512];
-	int fd = popen("sh -c 'ip neigh show dev $1 2>/dev/null | grep \"169\\.254\"' _ " iface, "r");
+	char cmd[512];
+	snprintf(cmd, sizeof(cmd), "sh -c 'ip neigh show dev $1 2>/dev/null | grep \"169\\.254\"' _ %s", iface);
+	FILE *fd = popen(cmd, "r");
 	if (!fd) return -EIO;
 
 	while (fgets(tmp, sizeof(tmp), fd)) {
-		/* Parse the first whitespace-delimited token (the IP). */
 		char *ip = strtok(tmp, " \t\n\r");
 		if (!ip || strncmp(ip, "169.", 4) != 0) continue;
-
-		/* Don't report ourselves as peer. */
 		if (self_ip[0] && strcmp(ip, self_ip) == 0) continue;
 
 		strncpy(out_peer_ip, ip, out_len - 1);
 		out_peer_ip[out_len - 1] = '\0';
 
-		/* Persist peer IP and update status. */
 		write_file_atomic(PEER_IP, out_peer_ip);
 		write_file_atomic(STATUS, "connected");
 
@@ -209,7 +176,6 @@ const char *eth_autoip_self_ip(void)
 {
 	if (self_ip[0]) return self_ip;
 
-	/* Read from file if not yet cached. */
 	if (read_eth_ip(self_ip, sizeof(self_ip)) == 0 && self_ip[0]) {
 		return self_ip;
 	}
