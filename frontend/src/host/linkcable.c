@@ -18,6 +18,7 @@
 #define SET_VAR 16
 
 static char self[16], peer[16];
+static char status_val[16];
 
 /* Compare two dotted-quad IPs numerically. Returns: -1, 0, 1. */
 static int ip_cmp(const char *a, const char *b)
@@ -76,7 +77,6 @@ bool linkcable_available(void)
 bool linkcable_set_variables(retro_environment_t env_cb)
 {
 	bool is_server = ip_cmp(self, peer) < 0;
-	char tmp[4];
 
 	if (!linkcable_available()) return false;
 
@@ -85,6 +85,7 @@ bool linkcable_set_variables(retro_environment_t env_cb)
 
 	if (!is_server) {
 		unsigned oct[4];
+		char tmp[4];
 		sscanf(peer, "%u.%u.%u.%u", &oct[0], &oct[1], &oct[2], &oct[3]);
 		snprintf(tmp, sizeof(tmp), "%u", oct[0]);
 		send_variable(env_cb, "gambatte_gb_link_network_server_ip_1", tmp);
@@ -92,6 +93,8 @@ bool linkcable_set_variables(retro_environment_t env_cb)
 		send_variable(env_cb, "gambatte_gb_link_network_server_ip_2", tmp);
 		snprintf(tmp, sizeof(tmp), "%u", oct[2]);
 		send_variable(env_cb, "gambatte_gb_link_network_server_ip_3", tmp);
+		snprintf(tmp, sizeof(tmp), "%u", oct[3]);
+		send_variable(env_cb, "gambatte_gb_link_network_server_ip_4", tmp);
 	}
 
 	return true;
@@ -99,22 +102,28 @@ bool linkcable_set_variables(retro_environment_t env_cb)
 
 const char *linkcable_status(void)
 {
-	static const char connected_str[]    = "connected";
-	static const char waiting_str[]      = "waiting";
-	static const char disconnected_str[] = "disconnected";
-
-	char buf[32];
-	FILE *f;
+	static const char status_connected[]    = "connected";
+	static const char status_waiting[]      = "waiting";
+	static const char status_disconnected[] = "disconnected";
 
 	if (!self[0] && !peer[0]) {
 		const char *s = eth_autoip_self_ip();
 		if (s && s[0]) strlcpy(self, s, sizeof(self));
-		if ((f = fopen(PEER_IP, "r")) != NULL) { (void)fgets(buf, sizeof(buf), f); fclose(f); strip(buf); strlcpy(peer, buf, sizeof(peer)); }
+		char buf[16];
+		FILE *f = fopen(PEER_IP, "r");
+		if (f) { (void)fgets(buf, sizeof(buf), f); fclose(f); strip(buf); strlcpy(peer, buf, sizeof(peer)); }
 	}
-	if (!self[0] || !peer[0]) return self[0] ? waiting_str : disconnected_str;
+	if (!self[0] || !peer[0]) return self[0] ? status_waiting : status_disconnected;
 
-	if ((f = fopen(STATUS, "r")) != NULL) { (void)fgets(buf, sizeof(buf), f); fclose(f); strip(buf); if (buf[0]) return strdup(buf); }
-	return connected_str;
+	FILE *f = fopen(STATUS, "r");
+	if (f) {
+		if (fgets(status_val, sizeof(status_val), f)) {
+			strip(status_val);
+			if (status_val[0]) return status_val;
+		}
+		fclose(f);
+	}
+	return status_connected;
 }
 
 const char *linkcable_peer_ip(void)
