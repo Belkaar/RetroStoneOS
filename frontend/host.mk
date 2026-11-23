@@ -71,7 +71,8 @@ HOST_SRCS = \
 	src/host/hwrender.c src/host/sys.c src/host/ini.c src/host/md5.c \
 	src/host/hutil.c src/host/host_png.c src/host/batt_overlay.c src/host/perf.c \
 	src/host/bench.c src/host/bench_run.c src/host/glprobe.c src/host/playtime.c \
-	src/host/switcher.c $(HOST_INPUT_SRC) \
+	src/host/switcher.c src/host/linkcable.c $(HOST_INPUT_SRC) \
+	src/transfer/eth_autoip.c \
 	src/audio/audio.c src/audio/resampler.c src/board.c
 HOST_OBJS = $(HOST_SRCS:src/%.c=$(BUILDDIR)/%.o) $(BUILDDIR)/third_party/miniz.o
 HOST_LIBS = $(ALSA_LIBS) -lpthread -ldl -lm

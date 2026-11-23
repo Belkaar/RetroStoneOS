@@ -225,6 +225,16 @@ eth_on() {
 	fi
 	ip link set "$ETH_IF" up
 	[ -f "$RUN_DIR/udhcpc.$ETH_IF.pid" ] || udhcpc_start "$ETH_IF"
+	# If no DHCP lease after a short wait, fall back to link-local APIPA.
+	# This enables direct Ethernet linking (zero-config netplay).  We use
+	# the kernel's built-in RFC 3927 support — no avahi/autoipd needed.
+	if ! ip addr show "$ETH_IF" | grep -q 'inet [0-9]\+\.\([0-9]\+\.)'; then
+		# No DHCP/other lease: assign link-local address derived from MAC.
+		local mac_last_byte
+		mac_last_byte=$(cat /sys/class/net/$ETH_IF/address | awk -F: '{print $NF}')
+		local second_octet=$(( (0x${mac_last_byte} % 2 == 0) ? 0 : 1 ))
+		ip addr add "169.254.${second_octet}.0/16" dev "$ETH_IF" 2>/dev/null
+	fi
 }
 
 # Closing the interface detaches the PHY (stmmac_release -> phylink ->
