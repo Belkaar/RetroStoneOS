@@ -12,8 +12,8 @@ LIBRETRO_GAMBATTE_LICENSE_FILES = COPYING
 
 # platform=rpi2 (the Makefile turns it into "rpi2 unix"): -marm
 # -mcpu=cortex-a7 -mfpu=neon-vfpv4 -mfloat-abi=hard -fomit-frame-pointer, -O2,
-# RGB565 video. Plain C++, no asm. HAVE_NETWORK=0 drops the link-cable-over-TCP
-# code (sockets, not wanted on the handheld).
+# RGB565 video. Plain C++, no asm. HAVE_NETWORK=1 enables the link-cable-over-TCP
+# code for local Ethernet multiplayer.
 # platform= per architecture (package/libretro-common.mk, docs/cores.md
 # "Architectures"): rpi2 on the RetroStone2 (Cortex-A7).
 LIBRETRO_GAMBATTE_PLATFORM = \
@@ -21,7 +21,7 @@ LIBRETRO_GAMBATTE_PLATFORM = \
 
 LIBRETRO_GAMBATTE_MAKE_OPTS = \
 	platform=$(LIBRETRO_GAMBATTE_PLATFORM) \
-	HAVE_NETWORK=0 \
+	HAVE_NETWORK=1 \
 	CC="$(TARGET_CC)" \
 	CXX="$(TARGET_CXX)" \
 	AR="$(TARGET_AR)"
